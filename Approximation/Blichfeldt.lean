@@ -140,6 +140,22 @@ lemma valuedAdicCompletion_diag' (x : K) (v : HeightOneSpectrum (𝓞 K)) :
   exact @IsDedekindDomain.HeightOneSpectrum.valuedAdicCompletion_eq_valuation'
     (𝓞 K) _ _ K _ _ _ v x
 
+/-- If any finite-place component has zero valuation (i.e. the component is zero),
+    the full adelic norm vanishes. Works over any number field. -/
+lemma norm_eq_zero_of_component_zero (a : 𝔸 K)
+    (h_fin : (Function.mulSupport fun v : HeightOneSpectrum (𝓞 K) => Valued.v (a.2 v)).Finite)
+    {w : HeightOneSpectrum (𝓞 K)} (hw : Valued.v (a.2 w) = 0) : ‖a‖ = 0 := by
+  have haw : a.2 w = 0 := (Valuation.zero_iff Valued.v).mp hw
+  rw [norm_eq_finprod_mul_prod K a h_fin,
+      finprod_eq_zero _ w (by simp [haw]) (norm_mulSupport_finite_of_valued K h_fin), zero_mul]
+
+/-- For an adele with positive norm, all finite-place valuations are nonzero.
+    Contrapositively: a zero component forces the norm to zero. -/
+lemma valued_ne_zero_of_norm_pos (a : 𝔸 K)
+    (h_fin : (Function.mulSupport fun v : HeightOneSpectrum (𝓞 K) => Valued.v (a.2 v)).Finite)
+    (h_pos : 0 < ‖a‖) (v : HeightOneSpectrum (𝓞 K)) : Valued.v (a.2 v) ≠ 0 := fun hv =>
+  absurd h_pos (by linarith [norm_eq_zero_of_component_zero K a h_fin hv])
+
 /-! ### Blichfeldt-Minkowski and coset decomposition -/
 
 /-- **`absNorm` of the Blichfeldt–Minkowski fractional ideal** — the number-field
@@ -148,7 +164,7 @@ components, the absolute norm of `∏ᶠ v, 𝔭_v ^ adeleOrd a v` is the recipr
 `∏ᶠ v, ‖a v‖`. The fractional ideal itself and its membership bound are the shared,
 general-Dedekind constructions of `Approximation.IdeleToIdeal` (`fractionalIdealOfExps`,
 `adeleOrd`); only this `absNorm` computation needs the number-field structure. -/
-private lemma absNorm_fractionalIdealOfExps_adeleOrd (a : FiniteAdeleRing (𝓞 K) K)
+lemma absNorm_fractionalIdealOfExps_adeleOrd (a : FiniteAdeleRing (𝓞 K) K)
     (hsupp : {v : HeightOneSpectrum (𝓞 K) | FiniteAdeleRing.adeleOrd a v ≠ 0}.Finite)
     (h_ne : ∀ v : HeightOneSpectrum (𝓞 K), Valued.v (a v) ≠ 0) :
     (FractionalIdeal.absNorm
@@ -193,6 +209,29 @@ private lemma absNorm_fractionalIdealOfExps_adeleOrd (a : FiniteAdeleRing (𝓞 
   push_cast
   rfl
 
+/-- The Minkowski bound scales linearly with the absolute norm of the fractional ideal:
+    `minkowskiBound K I = absNorm I · minkowskiBound K 1`.
+
+    This factoring holds for any invertible fractional ideal `I` of a number field `K`
+    and follows directly from `volume_fundamentalDomain_fractionalIdealLatticeBasis`.
+    It isolates the ideal-theoretic scaling from the analytic Minkowski bound. -/
+lemma minkowskiBound_mul_absNorm (I : (FractionalIdeal (𝓞 K)⁰ K)ˣ) :
+    minkowskiBound K I =
+        ENNReal.ofReal (FractionalIdeal.absNorm I.1 : ℝ) * minkowskiBound K 1 := by
+  have h_vol : volume (ZSpan.fundamentalDomain (fractionalIdealLatticeBasis K I)) =
+      ENNReal.ofReal ↑(FractionalIdeal.absNorm I.1) *
+      volume (ZSpan.fundamentalDomain (latticeBasis K)) :=
+    volume_fundamentalDomain_fractionalIdealLatticeBasis K I
+  have h_one : volume (ZSpan.fundamentalDomain (fractionalIdealLatticeBasis K 1)) =
+      volume (ZSpan.fundamentalDomain (latticeBasis K)) := by
+    have h := volume_fundamentalDomain_fractionalIdealLatticeBasis K
+        (1 : (FractionalIdeal (𝓞 K)⁰ K)ˣ)
+    simp only [Units.val_one, FractionalIdeal.absNorm_one, Rat.cast_one,
+        ENNReal.ofReal_one, one_mul] at h
+    exact h
+  simp only [minkowskiBound, h_vol, h_one]
+  ring
+
 /-- **Adelic Blichfeldt-Minkowski Lemma** (Lemma 25.14, corrected).
 
     There exists a constant B > 0 such that for any adele a with FINITE mulSupport
@@ -216,129 +255,76 @@ lemma blichfeldt_minkowski :
             Valued.v ((diag K x).2 v) ≤ Valued.v (a.2 v)) ∧
         (∀ w : InfinitePlace K,
             ‖(diag K x).1 w‖ ≤ ‖a.1 w‖) := by
-  -- The Minkowski bound: B = minkowskiBound(𝓞_K) / convexBodyLTFactor(K)
-  use (minkowskiBound K (1 : (FractionalIdeal (𝓞 K)⁰ K)ˣ) /
-       (convexBodyLTFactor K : ℝ≥0∞)).toReal
-  refine ⟨?_, fun a h_fin h_large => ?_⟩
-  · -- B > 0: ratio of two positive finite quantities
-    apply ENNReal.toReal_pos
-    · exact (ENNReal.div_pos (minkowskiBound_pos K 1).ne' ENNReal.coe_ne_top).ne'
-    · exact ENNReal.div_ne_top (minkowskiBound_lt_top K 1).ne
-        (ENNReal.coe_ne_zero.mpr (convexBodyLTFactor_ne_zero K))
-  · -- Main proof: construct x using Blichfeldt-Minkowski / Minkowski's theorem
-    -- Step 0: The fractional ideal I_a for the finite part of a, built directly from
-    -- the shared `fractionalIdealOfExps` (no separate `bmIdeal` definition needed; this
-    -- is the same construction underlying the idele-to-ideal map of `IdeleToIdeal`).
+  refine ⟨(minkowskiBound K (1 : (FractionalIdeal (𝓞 K)⁰ K)ˣ) /
+       (convexBodyLTFactor K : ℝ≥0∞)).toReal, ?_, fun a h_fin h_large => ?_⟩
+  · -- B > 0: ratio of two positive finite ENNReal quantities
+    exact ENNReal.toReal_pos
+      (ENNReal.div_pos (minkowskiBound_pos K 1).ne' ENNReal.coe_ne_top).ne'
+      (ENNReal.div_ne_top (minkowskiBound_lt_top K 1).ne
+        (ENNReal.coe_ne_zero.mpr (convexBodyLTFactor_ne_zero K)))
+  · -- Build the Blichfeldt fractional ideal I_a from the valuation exponents of a.2
     have hsupp : {v : HeightOneSpectrum (𝓞 K) | FiniteAdeleRing.adeleOrd a.2 v ≠ 0}.Finite :=
       h_fin.subset (FiniteAdeleRing.adeleOrd_ne_zero_subset a.2)
     let I_a := FiniteAdeleRing.fractionalIdealOfExps (K := K) (FiniteAdeleRing.adeleOrd a.2) hsupp
-    -- Step 0.5: All finite-place valuations of a.2 are nonzero.
-    -- Proof: if Valued.v (a.2 w) = 0 for some w, then ‖a.2 w‖ = 0,
-    -- making ∏ᶠ ‖a.2 v‖ = 0 (by finprod_eq_zero), so ‖a‖ = 0.
-    -- But h_large says B < 0, while B ≥ 0 (ENNReal.toReal ≥ 0). Contradiction.
-    have h_ne : ∀ w : HeightOneSpectrum (𝓞 K), Valued.v (a.2 w) ≠ 0 := by
-      intro w hw
-      have haw : a.2 w = 0 := by rwa [← Valuation.zero_iff Valued.v]
-      have h_prod_zero : ∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖ = 0 :=
-        finprod_eq_zero _ w (by simp [haw]) (norm_mulSupport_finite_of_valued K h_fin)
-      have h_adelic_zero : ‖a‖ = 0 := by
-        rw [norm_eq_finprod_mul_prod K a h_fin, h_prod_zero, zero_mul]
-      rw [h_adelic_zero] at h_large
-      exact absurd h_large (not_lt.mpr ENNReal.toReal_nonneg)
-    -- Step 1: Show the Minkowski condition holds
-    have h_mink : minkowskiBound K I_a <
-        volume (convexBodyLT K (fun w => ‖a.1 w‖₊)) := by
+    -- All finite-place valuations are nonzero: B ≥ 0 < ‖a‖ forces ‖a‖ > 0,
+    -- and a zero component would make ‖a‖ = 0 via norm_eq_zero_of_component_zero.
+    have h_ne : ∀ v : HeightOneSpectrum (𝓞 K), Valued.v (a.2 v) ≠ 0 :=
+      fun v => valued_ne_zero_of_norm_pos K a h_fin
+        (ENNReal.toReal_nonneg.trans_lt h_large) v
+    -- Step 1: Verify the Minkowski volume condition minkowskiBound K I_a < vol(convexBody)
+    have h_mink : minkowskiBound K I_a < volume (convexBodyLT K (fun w => ‖a.1 w‖₊)) := by
       rw [convexBodyLT_volume]
-      -- Helper: finite support of norms (from the valuation support hypothesis)
-      have h_norm_fin : (Function.mulSupport (fun v : HeightOneSpectrum (𝓞 K) =>
-          ‖a.2 v‖)).Finite := norm_mulSupport_finite_of_valued K h_fin
-      -- F := ∏ᶠ v, ‖a.2 v‖ > 0 (all ‖a.2 v‖ > 0 by h_ne, and finprod is finite)
+      have h_norm_fin : (Function.mulSupport fun v : HeightOneSpectrum (𝓞 K) =>
+          ‖a.2 v‖).Finite := norm_mulSupport_finite_of_valued K h_fin
+      -- F := ∏ᶠ v, ‖a.2 v‖ > 0 since each factor is positive
       have h_F_pos : 0 < ∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖ := by
         rw [finprod_eq_prod _ h_norm_fin]
-        exact Finset.prod_pos (fun v _ =>
-          norm_pos_iff.mpr ((Valuation.ne_zero_iff Valued.v).mp (h_ne v)))
-      -- C := convexBodyLTFactor K > 0 (it is ≥ 1)
+        exact Finset.prod_pos fun v _ =>
+          norm_pos_iff.mpr ((Valuation.ne_zero_iff Valued.v).mp (h_ne v))
       have h_C_pos : 0 < (convexBodyLTFactor K : ℝ) :=
         NNReal.coe_pos.mpr (lt_of_lt_of_le one_pos (one_le_convexBodyLTFactor K))
-      -- minkowskiBound K I_a = ofReal(absNorm I_a.1) * minkowskiBound K 1
-      -- Proof: expand both sides via volume_fundamentalDomain_fractionalIdealLatticeBasis.
-      have h_mink_eq : minkowskiBound K I_a =
-          ENNReal.ofReal ↑(FractionalIdeal.absNorm I_a.1) * minkowskiBound K 1 := by
-        have h_vol_Ia : volume (ZSpan.fundamentalDomain (fractionalIdealLatticeBasis K I_a)) =
-            ENNReal.ofReal ↑(FractionalIdeal.absNorm I_a.1) *
-            volume (ZSpan.fundamentalDomain (latticeBasis K)) :=
-          volume_fundamentalDomain_fractionalIdealLatticeBasis K I_a
-        have h_vol_1 : volume (ZSpan.fundamentalDomain (fractionalIdealLatticeBasis K 1)) =
-            volume (ZSpan.fundamentalDomain (latticeBasis K)) := by
-          have h := volume_fundamentalDomain_fractionalIdealLatticeBasis K
-              (1 : (FractionalIdeal (𝓞 K)⁰ K)ˣ)
-          simp only [Units.val_one, FractionalIdeal.absNorm_one, Rat.cast_one,
-              ENNReal.ofReal_one, one_mul] at h
-          exact h
-        simp only [minkowskiBound, h_vol_Ia, h_vol_1]
-        ring
-      -- absNorm I_a.1 = F⁻¹  (the number-field input lemma)
-      have h_absNorm : (FractionalIdeal.absNorm I_a.1 : ℝ) =
-          (∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖)⁻¹ :=
-        absNorm_fractionalIdealOfExps_adeleOrd K a.2 hsupp h_ne
-      -- Combine: minkowskiBound K I_a = ofReal(F⁻¹) * minkowskiBound K 1
-      have h_mb : minkowskiBound K I_a =
-          ENNReal.ofReal (∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖)⁻¹ *
-          minkowskiBound K 1 := by rw [h_mink_eq, h_absNorm]
-      -- Convert ENNReal goal to a real-number inequality
-      -- RHS = ↑(convexBodyLTFactor K) * ↑(∏ w, ‖a.1 w‖₊ ^ w.mult), which is ≠ ⊤
+      -- Reduce to a real inequality via ENNReal.toReal
       rw [← ENNReal.toReal_lt_toReal (minkowskiBound_lt_top K I_a).ne
           (ENNReal.mul_ne_top ENNReal.coe_ne_top ENNReal.coe_ne_top)]
-      -- Expand LHS: (minkowskiBound K I_a).toReal = F⁻¹ * (minkowskiBound K 1).toReal
+      -- LHS: minkowskiBound_mul_absNorm + absNorm_fractionalIdealOfExps_adeleOrd
+      -- give (minkowskiBound K I_a).toReal = F⁻¹ · (minkowskiBound K 1).toReal
       have hLHS : (minkowskiBound K I_a).toReal =
           (∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖)⁻¹ * (minkowskiBound K 1).toReal := by
-        rw [h_mb, ENNReal.toReal_mul,
-            ENNReal.toReal_ofReal (inv_nonneg.mpr h_F_pos.le)]
-      -- Expand RHS: ↑C * ↑P = C * P as reals
-      have hRHS : ((↑(convexBodyLTFactor K) * ↑(∏ w : InfinitePlace K, ‖a.1 w‖₊ ^ w.mult) :
-            ℝ≥0∞)).toReal =
+        rw [minkowskiBound_mul_absNorm,
+            absNorm_fractionalIdealOfExps_adeleOrd K a.2 hsupp h_ne,
+            ENNReal.toReal_mul, ENNReal.toReal_ofReal (inv_nonneg.mpr h_F_pos.le)]
+      -- RHS: convert NNReal products to ℝ
+      have hRHS : ((↑(convexBodyLTFactor K) * ↑(∏ w : InfinitePlace K,
+            ‖a.1 w‖₊ ^ w.mult) : ℝ≥0∞)).toReal =
           (convexBodyLTFactor K : ℝ) * ∏ w : InfinitePlace K, ‖a.1 w‖ ^ w.mult := by
         rw [ENNReal.toReal_mul, ENNReal.coe_toReal, ENNReal.coe_toReal]
-        congr 1
-        push_cast [NNReal.coe_prod, NNReal.coe_pow, coe_nnnorm]
-        rfl
+        congr 1; push_cast [NNReal.coe_prod, NNReal.coe_pow, coe_nnnorm]; rfl
       rw [hLHS, hRHS]
-      -- Goal: F⁻¹ * M < C * P  where h_large : M/C < ‖a‖ = F * P
-      -- Rewrite h_large to expose M/C < F*P
+      -- h_large gives M/C < F · P; rearrange to F⁻¹ · M < C · P
       have h_large' : (minkowskiBound K 1 : ℝ≥0∞).toReal / (convexBodyLTFactor K : ℝ) <
           (∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖) *
           ∏ w : InfinitePlace K, ‖a.1 w‖ ^ w.mult := by
-        have := h_large
-        rw [ENNReal.toReal_div, ENNReal.coe_toReal,
-            norm_eq_finprod_mul_prod K a h_fin] at this
-        exact this
-      -- M/C < F*P  ↔  M < C*(F*P)  ↔  F⁻¹*M < C*P
+        rwa [ENNReal.toReal_div, ENNReal.coe_toReal,
+            norm_eq_finprod_mul_prod K a h_fin] at h_large
       rw [div_lt_iff₀ h_C_pos] at h_large'
       rw [inv_mul_lt_iff₀ h_F_pos]
-      linarith [show (convexBodyLTFactor K : ℝ) * ((∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖) *
+      linarith [show (convexBodyLTFactor K : ℝ) *
+          ((∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖) *
           ∏ w : InfinitePlace K, ‖a.1 w‖ ^ w.mult) =
           (∏ᶠ v : HeightOneSpectrum (𝓞 K), ‖a.2 v‖) *
           ((convexBodyLTFactor K : ℝ) * ∏ w : InfinitePlace K, ‖a.1 w‖ ^ w.mult) from by ring]
     -- Step 2: Apply Minkowski's theorem
-    obtain ⟨x, hx_mem, hx_ne, hx_bd⟩ :=
-      exists_ne_zero_mem_ideal_lt K I_a h_mink
-    -- Step 3: Package the result
-    refine ⟨x, hx_ne, ?_, ?_⟩
-    · -- Finite place condition: Valued.v((diag x).2 v) ≤ Valued.v(a.2 v) for all v
-      intro v
-      rw [valuedAdicCompletion_diag', FiniteAdeleRing.valued_eq_exp_neg_adeleOrd (h_ne v)]
+    obtain ⟨x, hx_mem, hx_ne, hx_bd⟩ := exists_ne_zero_mem_ideal_lt K I_a h_mink
+    -- Step 3: Package finite-place and infinite-place bounds
+    refine ⟨x, hx_ne, fun v => ?_, fun w => ?_⟩
+    · rw [valuedAdicCompletion_diag', FiniteAdeleRing.valued_eq_exp_neg_adeleOrd (h_ne v)]
       exact FiniteAdeleRing.valuation_le_exp_neg_of_mem_fractionalIdealOfExps
         (FiniteAdeleRing.adeleOrd a.2) hsupp hx_ne hx_mem v
-    · -- Infinite place condition: ‖(diag x).1 w‖ ≤ ‖a.1 w‖ for all w.
-      intro w
-      have h_norm : ‖(diag K x).1 w‖ = w x := by
+    · have h_norm : ‖(diag K x).1 w‖ = w x := by
         simp only [NumberField.AdeleRing.algebraMap_fst_apply]
-        rw [show (x : w.Completion) =
-              ((WithAbs.equiv w.1).symm x : w.Completion) from rfl]
-        rw [InfinitePlace.Completion.norm_coe, RingEquiv.apply_symm_apply]
-      rw [h_norm]
-      have hbd := hx_bd w
-      exact le_of_lt (lt_of_lt_of_eq hbd (coe_nnnorm _))
+        rw [show (x : w.Completion) = ((WithAbs.equiv w.1).symm x : w.Completion) from rfl,
+            InfinitePlace.Completion.norm_coe, RingEquiv.apply_symm_apply]
+      exact le_of_lt (h_norm ▸ lt_of_lt_of_eq (hx_bd w) (coe_nnnorm _))
 
 end
 end StrongApproximation
